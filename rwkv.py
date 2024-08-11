@@ -271,7 +271,7 @@ class RWKV(pl.LightningModule):
         self.ln_out.weight.data = self.ln_out.weight.data.to('cuda', dtype=torch.bfloat16)
         self.ln_out.bias.data = self.ln_out.bias.data.to('cuda', dtype=torch.bfloat16)
 
-        self.head = nn.Linear(args.n_embd, args.rnn_hidden_size, bias=False)
+        self.head = nn.Linear(args.n_embd, args.rwkv_out_size, bias=False)
         self.head.weight.data = self.head.weight.data.to('cuda', dtype=torch.bfloat16)
 
         if args.dropout > 0:

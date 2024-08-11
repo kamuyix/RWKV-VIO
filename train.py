@@ -34,7 +34,7 @@ parser.add_argument('--fuse_method', type=str, default='cat', help='fusion metho
 parser.add_argument('--imu_dropout', type=float, default=0, help='dropout for the IMU encoder')
 parser.add_argument('--head_size_a', type=int, default=64, help='')
 
-parser.add_argument('--rnn_hidden_size', type=int, default=512)
+parser.add_argument('--rwkv_out_size', type=int, default=512)
 parser.add_argument('--rnn_dropout_out', type=float, default=0.2, help='dropout for the LSTM output layer')
 parser.add_argument('--rnn_dropout_between', type=float, default=0.2, help='dropout within LSTM')
 parser.add_argument('--weight_decay', type=float, default=5e-6, help='weight decay for the optimizer')
