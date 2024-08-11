@@ -34,7 +34,7 @@ parser.add_argument('--fuse_method', type=str, default='cat', help='fusion metho
 parser.add_argument('--imu_dropout', type=float, default=0, help='dropout for the IMU encoder')
 parser.add_argument('--head_size_a', type=int, default=64, help='')
 
-parser.add_argument('--rnn_hidden_size', type=int, default=512, help='size of the LSTM latent')
+parser.add_argument('--rnn_hidden_size', type=int, default=512)
 parser.add_argument('--rnn_dropout_out', type=float, default=0.2, help='dropout for the LSTM output layer')
 parser.add_argument('--rnn_dropout_between', type=float, default=0.2, help='dropout within LSTM')
 parser.add_argument('--weight_decay', type=float, default=5e-6, help='weight decay for the optimizer')
@@ -43,7 +43,7 @@ parser.add_argument('--seq_len', type=int, default=16, help='sequence length for
 parser.add_argument('--workers', type=int, default=32, help='number of workers')
 parser.add_argument('--epochs_warmup', type=int, default=40, help='number of epochs for warmup')
 parser.add_argument('--epochs_fine', type=int, default=20, help='number of epochs for finetuning')
-parser.add_argument('--lr_warmup', type=float, default=1e-4, help='learning rate for warming up stage')
+parser.add_argument('--lr_warmup', type=float, default=5e-4, help='learning rate for warming up stage')
 parser.add_argument('--lr_fine', type=float, default=1e-6, help='learning rate for finetuning stage')
 
 parser.add_argument('--n_layer', type=int, default=4, help='num of rwkv')
@@ -204,31 +204,25 @@ def main():
 
     # 初始化优化器
     optimizer = optim.Adam(model.parameters(), lr=args.lr_warmup, betas=(0.9, 0.999), eps=1e-08, weight_decay=args.weight_decay)
-    total_epochs = args.epochs_warmup + args.epochs_fine
-
-    # 定义学习率调度器
-    scheduler = CosineAnnealingLR(optimizer, T_max=args.epochs_warmup)
-
     best = float('inf')
     all_iters = []
     pose_losses = []
     iter_count = 0
-
-
+    total_epochs = args.epochs_warmup + args.epochs_fine
     for ep in range(total_epochs):
-
+        model.train()
         # 动态调整学习率
         if ep < args.epochs_warmup:
-            scheduler.step()
+            lr = args.lr_warmup
         else:
-            for param_group in optimizer.param_groups:
-                param_group['lr'] = args.lr_fine
+            lr = args.lr_fine
+        for param_group in optimizer.param_groups:
+            param_group['lr'] = lr
 
-        message = f'Epoch: {ep}, lr: {optimizer.param_groups[0]["lr"]:.8f}'
+        message = f'Epoch: {ep}, lr: {lr:.8f}'
         print(message)
         logger.info(message)
 
-        model.train()
         mse_losses = train(model, optimizer, train_loader, logger, ep)
 
         for mse_loss in mse_losses:
