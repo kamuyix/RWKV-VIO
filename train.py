@@ -39,11 +39,11 @@ parser.add_argument('--rnn_dropout_out', type=float, default=0.2, help='dropout 
 parser.add_argument('--rnn_dropout_between', type=float, default=0.2, help='dropout within rwkv')
 parser.add_argument('--weight_decay', type=float, default=5e-6, help='weight decay for the optimizer')
 parser.add_argument('--batch_size', type=int, default=16, help='batch size')
-parser.add_argument('--seq_len', type=int, default=16, help='sequence length for LSTM')
+parser.add_argument('--seq_len', type=int, default=12, help='sequence length for LSTM')
 parser.add_argument('--workers', type=int, default=32, help='number of workers')
 parser.add_argument('--epochs_warmup', type=int, default=40, help='number of epochs for warmup')
 parser.add_argument('--epochs_fine', type=int, default=20, help='number of epochs for finetuning')
-parser.add_argument('--lr_warmup', type=float, default=1e-4, help='learning rate for warming up stage')
+parser.add_argument('--lr_warmup', type=float, default=5e-5, help='learning rate for warming up stage')
 parser.add_argument('--lr_fine', type=float, default=1e-6, help='learning rate for finetuning stage')
 
 parser.add_argument('--n_layer', type=int, default=4, help='num of rwkv')
@@ -105,7 +105,7 @@ def train(model, optimizer, train_loader, logger, ep, weighted=False):
 
         mse_losses.append(pose_loss.item())
 
-    return mse_losses
+    return np.mean(mse_losses)
 
 def plot_losses(all_iters, pose_losses):
     plt.figure(figsize=(10, 5))
