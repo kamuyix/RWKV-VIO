@@ -135,7 +135,6 @@ class Pose_RWKV(nn.Module):
         fused = self.fuse(fv, fi)
         out = self.rwkv(fused)
         pose = self.regressor(out)
-
         return pose
 
 class DeepVIO(nn.Module):

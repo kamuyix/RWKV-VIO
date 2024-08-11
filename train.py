@@ -12,6 +12,7 @@ from collections import defaultdict
 from vio_utils.kitti_eval import KITTI_tester
 import numpy as np
 import math
+from rwkv import L2Wrap
 import matplotlib.pyplot as plt
 import torch.optim as optim
 import torch.optim.lr_scheduler as lr_scheduler
@@ -35,23 +36,21 @@ parser.add_argument('--imu_dropout', type=float, default=0, help='dropout for th
 parser.add_argument('--head_size_a', type=int, default=64, help='')
 
 parser.add_argument('--rwkv_out_size', type=int, default=512)
-parser.add_argument('--rnn_dropout_out', type=float, default=0.2, help='dropout for the rwkv output layer')
-parser.add_argument('--rnn_dropout_between', type=float, default=0.2, help='dropout within rwkv')
 parser.add_argument('--weight_decay', type=float, default=5e-6, help='weight decay for the optimizer')
 parser.add_argument('--batch_size', type=int, default=16, help='batch size')
-parser.add_argument('--seq_len', type=int, default=12, help='sequence length for LSTM')
+parser.add_argument('--seq_len', type=int, default=11, help='sequence length for LSTM')
 parser.add_argument('--workers', type=int, default=32, help='number of workers')
-parser.add_argument('--epochs_warmup', type=int, default=40, help='number of epochs for warmup')
-parser.add_argument('--epochs_fine', type=int, default=20, help='number of epochs for finetuning')
+parser.add_argument('--epochs_warmup', type=int, default=30, help='number of epochs for warmup')
+parser.add_argument('--epochs_fine', type=int, default=30, help='number of epochs for finetuning')
 parser.add_argument('--lr_warmup', type=float, default=5e-5, help='learning rate for warming up stage')
 parser.add_argument('--lr_fine', type=float, default=1e-6, help='learning rate for finetuning stage')
 
-parser.add_argument('--n_layer', type=int, default=4, help='num of rwkv')
+parser.add_argument('--n_layer', type=int, default=6, help='num of rwkv')
 parser.add_argument('--n_embd', type=int, default=768, help='v_f + i_f')
 parser.add_argument('--dim_att', type=int, default=768, help='')
 parser.add_argument('--dim_ffn', type=int, default=2048, help='')
 parser.add_argument("--head_size_divisor", default=12, type=int)
-parser.add_argument("--dropout", default=0.05, type=float)
+parser.add_argument("--dropout", default=0, type=float, help="dropout for the rwkv")
 parser.add_argument("--grad_cp", default=0, type=int)
 
 parser.add_argument('--experiment_name', type=str, default='experiment', help='experiment name')
@@ -93,13 +92,13 @@ def train(model, optimizer, train_loader, logger, ep, weighted=False):
             angle_loss = (weight.unsqueeze(-1).unsqueeze(-1) * (poses[:,:,:3] - gts[:, :, :3]) ** 2).mean()
             translation_loss = (weight.unsqueeze(-1).unsqueeze(-1) * (poses[:,:,3:] - gts[:, :, 3:]) ** 2).mean()
 
-        pose_loss = 100 * angle_loss + translation_loss
-
-        pose_loss.backward()
+        pose_loss = 10 * angle_loss + translation_loss
+        loss = pose_loss.to(torch.float32)
+        loss.backward()
         optimizer.step()
 
         if i % args.print_frequency == 0:
-            message = f"Epoch: {ep}, iters: {i}/{data_len}, pose loss: {pose_loss.item():.6f}"
+            message = f"Epoch: {ep}, iters: {i}/{data_len}, pose loss: {pose_loss.item():.6f}, loss: {loss.item():.6f}"
             print(message)
             logger.info(message)
 
