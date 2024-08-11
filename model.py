@@ -26,7 +26,7 @@ class Inertial_encoder(nn.Module):
         super(Inertial_encoder, self).__init__()
 
         self.encoder_conv = nn.Sequential(
-            nn.Conv1d(6, 64, kernel_size=3, padding=1),
+            nn.Conv1d(6, 64, kernel_size=3, padding=1).to(torch.bfloat16),
             nn.BatchNorm1d(64),
             nn.LeakyReLU(0.1, inplace=True),
             nn.Dropout(opt.imu_dropout),
@@ -67,16 +67,16 @@ class Encoder(nn.Module):
         self.inertial_encoder = Inertial_encoder(opt)
 
     def forward(self, img, imu):
-        img = img.to(torch.bfloat16)
-        imu = imu.to(torch.bfloat16)
 
         v = torch.cat((img[:, :-1], img[:, 1:]), dim=2)
         batch_size = v.size(0)
         seq_len = v.size(1)
+        # image CNN
         v = v.view(batch_size * seq_len, v.size(2), v.size(3), v.size(4))
         v = self.encode_image(v)
         v = v.view(batch_size, seq_len, -1).to(torch.bfloat16)
         v = self.visual_head(v)
+        # IMU CNN
         imu = torch.cat([imu[:, i * 10:i * 10 + 11, :].unsqueeze(1) for i in range(seq_len)], dim=1)
         imu = self.inertial_encoder(imu)
         return v, imu
@@ -103,8 +103,6 @@ class Fusion_module(nn.Module):
                 nn.Linear(self.f_len, 2 * self.f_len)).to(torch.bfloat16)
 
     def forward(self, v, i):
-        v = v.to(torch.bfloat16)
-        i = i.to(torch.bfloat16)
         if self.fuse_method == 'cat':
             return torch.cat((v, i), -1)
         elif self.fuse_method == 'soft':
@@ -127,7 +125,6 @@ class Pose_RWKV(nn.Module):
 
         self.fuse = Fusion_module(opt)
 
-        self.rnn_drop_out = nn.Dropout(opt.rnn_dropout_out)
         self.regressor = nn.Sequential(
             nn.Linear(opt.rwkv_out_size, 128).to(torch.bfloat16),
             nn.LeakyReLU(0.1, inplace=True).to(torch.bfloat16),
@@ -137,7 +134,6 @@ class Pose_RWKV(nn.Module):
     def forward(self, fv, fi):
         fused = self.fuse(fv, fi)
         out = self.rwkv(fused)
-        out = self.rnn_drop_out(out)
         pose = self.regressor(out)
 
         return pose
