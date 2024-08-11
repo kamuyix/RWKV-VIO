@@ -43,7 +43,7 @@ parser.add_argument('--seq_len', type=int, default=16, help='sequence length for
 parser.add_argument('--workers', type=int, default=32, help='number of workers')
 parser.add_argument('--epochs_warmup', type=int, default=40, help='number of epochs for warmup')
 parser.add_argument('--epochs_fine', type=int, default=20, help='number of epochs for finetuning')
-parser.add_argument('--lr_warmup', type=float, default=5e-4, help='learning rate for warming up stage')
+parser.add_argument('--lr_warmup', type=float, default=1e-4, help='learning rate for warming up stage')
 parser.add_argument('--lr_fine', type=float, default=1e-6, help='learning rate for finetuning stage')
 
 parser.add_argument('--n_layer', type=int, default=4, help='num of rwkv')

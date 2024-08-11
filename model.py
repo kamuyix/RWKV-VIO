@@ -127,7 +127,7 @@ class Pose_RWKV(nn.Module):
 
         self.fuse = Fusion_module(opt)
 
-        self.rnn_drop_out = nn.Dropout(opt.rwkv_out_size)
+        self.rnn_drop_out = nn.Dropout(opt.rnn_dropout_out)
         self.regressor = nn.Sequential(
             nn.Linear(opt.rwkv_out_size, 128).to(torch.bfloat16),
             nn.LeakyReLU(0.1, inplace=True).to(torch.bfloat16),
