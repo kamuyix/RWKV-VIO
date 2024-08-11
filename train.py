@@ -203,37 +203,31 @@ def main():
     model.cuda(gpu_ids[0])
 
     # 初始化优化器
-    optimizer = optim.Adam(model.parameters(), lr=args.lr_warmup, betas=(0.9, 0.999), eps=1e-08, weight_decay=args.weight_decay)
+    optimizer = optim.Adam(model.parameters(), lr=1e-4, betas=(0.9, 0.999), eps=1e-08, weight_decay=args.weight_decay)
     best = float('inf')
     all_iters = []
     pose_losses = []
     iter_count = 0
     total_epochs = args.epochs_warmup + args.epochs_fine
     for ep in range(total_epochs):
-        model.train()
+
         # 动态调整学习率
         if ep < args.epochs_warmup:
             lr = args.lr_warmup
         else:
             lr = args.lr_fine
-        for param_group in optimizer.param_groups:
-            param_group['lr'] = lr
+        optimizer.param_groups[0]['lr'] = lr
 
         message = f'Epoch: {ep}, lr: {lr:.8f}'
         print(message)
         logger.info(message)
-
-        mse_losses = train(model, optimizer, train_loader, logger, ep)
-
-        for mse_loss in mse_losses:
-            iter_count += 1
-            all_iters.append(iter_count)
-            pose_losses.append(mse_loss)
+        model.train()
+        avg_pose_loss = train(model, optimizer, train_loader, logger, ep)
 
         # 每10个 epoch 保存一次模型
         if (ep + 1) % 10 == 0:
             torch.save(model.state_dict(), f'{checkpoints_dir}/{ep+1:003}.pth')
-            message = f'Checkpoint saved for epoch {ep+1}'
+            message = f'Checkpoint saved for epoch {ep+1}, pose loss: {avg_pose_loss:.6f}, model saved'
             print(message)
             logger.info(message)
 
