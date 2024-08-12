@@ -71,13 +71,18 @@ class Encoder(nn.Module):
         v = torch.cat((img[:, :-1], img[:, 1:]), dim=2)
         batch_size = v.size(0)
         seq_len = v.size(1)
+
         # image CNN
+        # v shape [bs, seq-1, 2*channels, 256, 512]
         v = v.view(batch_size * seq_len, v.size(2), v.size(3), v.size(4))
+        # v shape [bs*sq-1, 2*channels, 256, 512]
         v = self.encode_image(v)
         v = v.view(batch_size, seq_len, -1).to(torch.bfloat16)
         v = self.visual_head(v)
         # IMU CNN
+        # imu shape [bs, (self.sequence_length-1)*IMU_FREQ+1],6]
         imu = torch.cat([imu[:, i * 10:i * 10 + 11, :].unsqueeze(1) for i in range(seq_len)], dim=1)
+        # imu shape [bs, seq-1, 11, 6]
         imu = self.inertial_encoder(imu)
         return v, imu
 
@@ -133,6 +138,7 @@ class Pose_RWKV(nn.Module):
 
     def forward(self, fv, fi):
         fused = self.fuse(fv, fi)
+        # fused shape [bs, seq-1, i_f_len + v_f_len]
         out = self.rwkv(fused)
         pose = self.regressor(out)
         return pose
@@ -161,12 +167,15 @@ class DeepVIO(nn.Module):
         img = img.to(torch.bfloat16)
         imu = imu.to(torch.bfloat16)
         fv, fi = self.Feature_net(img, imu)
+        # fv shape [bs, seq-1, 512], fi shape [bs, seq-1, 256]
         seq_len = fv.shape[1]
 
         poses = []
 
-        for i in range(seq_len):
-            pose = self.Pose_net(fv[:, i:i+1, :].to(torch.bfloat16), fi[:, i:i+1, :].to(torch.bfloat16))
-            poses.append(pose)
-        poses = torch.cat(poses, dim=1)
+        # for i in range(seq_len):
+        #     pose = self.Pose_net(fv[:, i:i+1, :].to(torch.bfloat16), fi[:, i:i+1, :].to(torch.bfloat16))
+        #     poses.append(pose)
+        poses = self.Pose_net(fv.to(torch.bfloat16), fi.to(torch.bfloat16))
+        # poses = torch.cat(poses, dim=1)
+        # poses shape [16, seq-1, 6]
         return poses

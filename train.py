@@ -35,22 +35,22 @@ parser.add_argument('--fuse_method', type=str, default='cat', help='fusion metho
 parser.add_argument('--imu_dropout', type=float, default=0, help='dropout for the IMU encoder')
 parser.add_argument('--head_size_a', type=int, default=64, help='')
 
-parser.add_argument('--rwkv_out_size', type=int, default=512)
+parser.add_argument('--rwkv_out_size', type=int, default=1024)
 parser.add_argument('--weight_decay', type=float, default=5e-6, help='weight decay for the optimizer')
 parser.add_argument('--batch_size', type=int, default=16, help='batch size')
-parser.add_argument('--seq_len', type=int, default=11, help='sequence length for LSTM')
+parser.add_argument('--seq_len', type=int, default=16, help='sequence length for LSTM')
 parser.add_argument('--workers', type=int, default=32, help='number of workers')
 parser.add_argument('--epochs_warmup', type=int, default=30, help='number of epochs for warmup')
 parser.add_argument('--epochs_fine', type=int, default=30, help='number of epochs for finetuning')
-parser.add_argument('--lr_warmup', type=float, default=5e-5, help='learning rate for warming up stage')
-parser.add_argument('--lr_fine', type=float, default=1e-6, help='learning rate for finetuning stage')
+parser.add_argument('--lr_warmup', type=float, default=6e-4, help='learning rate for warming up stage')
+parser.add_argument('--lr_fine', type=float, default=1e-5, help='learning rate for finetuning stage')
 
-parser.add_argument('--n_layer', type=int, default=6, help='num of rwkv')
+parser.add_argument('--n_layer', type=int, default=4, help='num of rwkv')
 parser.add_argument('--n_embd', type=int, default=768, help='v_f + i_f')
 parser.add_argument('--dim_att', type=int, default=768, help='')
 parser.add_argument('--dim_ffn', type=int, default=2048, help='')
 parser.add_argument("--head_size_divisor", default=12, type=int)
-parser.add_argument("--dropout", default=0, type=float, help="dropout for the rwkv")
+parser.add_argument("--dropout", default=0.01, type=float, help="dropout for the rwkv")
 parser.add_argument("--grad_cp", default=0, type=int)
 
 parser.add_argument('--experiment_name', type=str, default='experiment', help='experiment name')
@@ -79,11 +79,10 @@ def train(model, optimizer, train_loader, logger, ep, weighted=False):
         imus = imus.to('cuda', dtype=torch.bfloat16)
         gts = gts.to('cuda', dtype=torch.bfloat16)
         weight = weight.to('cuda', dtype=torch.bfloat16)
-
+        # gts shape [16, 15, 6]
         optimizer.zero_grad()
-
         poses = model(imgs, imus)
-
+        # poses shape: [bs, seq-1, 6]
         if not weighted:
             angle_loss = torch.nn.functional.mse_loss(poses[:,:,:3], gts[:, :, :3])
             translation_loss = torch.nn.functional.mse_loss(poses[:,:,3:], gts[:, :, 3:])
@@ -92,7 +91,7 @@ def train(model, optimizer, train_loader, logger, ep, weighted=False):
             angle_loss = (weight.unsqueeze(-1).unsqueeze(-1) * (poses[:,:,:3] - gts[:, :, :3]) ** 2).mean()
             translation_loss = (weight.unsqueeze(-1).unsqueeze(-1) * (poses[:,:,3:] - gts[:, :, 3:]) ** 2).mean()
 
-        pose_loss = 10 * angle_loss + translation_loss
+        pose_loss = 100 * angle_loss + translation_loss
         loss = pose_loss.to(torch.float32)
         loss.backward()
         optimizer.step()
@@ -206,7 +205,6 @@ def main():
     best = float('inf')
     all_iters = []
     pose_losses = []
-    iter_count = 0
     total_epochs = args.epochs_warmup + args.epochs_fine
     for ep in range(total_epochs):
 
