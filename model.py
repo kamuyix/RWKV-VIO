@@ -41,9 +41,11 @@ class Inertial_encoder(nn.Module):
         self.proj = nn.Linear(256 * 1 * 11, opt.i_f_len).to(torch.bfloat16)
 
     def forward(self, x):
+        # x [bs, seq-1, 11, 6]
         batch_size = x.shape[0]
         seq_len = x.shape[1]
         x = x.view(batch_size * seq_len, x.size(2), x.size(3))
+        # x [bs * seq-1, 11, 6]
         x = self.encoder_conv(x.permute(0, 2, 1))
         out = self.proj(x.view(x.shape[0], -1))
         return out.view(batch_size, seq_len, 256)
@@ -78,11 +80,13 @@ class Encoder(nn.Module):
         # v shape [bs*sq-1, 2*channels, 256, 512]
         v = self.encode_image(v)
         v = v.view(batch_size, seq_len, -1).to(torch.bfloat16)
-        v = self.visual_head(v)
+        v = self.visual_head(v)  # (batch, seq-1, 512)
+
         # IMU CNN
         # imu shape [bs, (self.sequence_length-1)*IMU_FREQ+1],6]
         imu = torch.cat([imu[:, i * 10:i * 10 + 11, :].unsqueeze(1) for i in range(seq_len)], dim=1)
         # imu shape [bs, seq-1, 11, 6]
+
         imu = self.inertial_encoder(imu)
         return v, imu
 
