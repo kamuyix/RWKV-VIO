@@ -17,7 +17,7 @@ parser.add_argument('--seq_len', type=int, default=16, help='sequence length for
 parser.add_argument("--grad_cp", default=0, type=int)  # gradient checkpt: saves VRAM, but slower
 
 parser.add_argument('--train_seq', type=list, default=['00', '01', '02', '04', '06', '08', '09'], help='sequences for training')
-parser.add_argument('--val_seq', type=list, default=['05', '07', '10'], help='sequences for validation')
+parser.add_argument('--val_seq', type=list, default=['04','05', '07', '10'], help='sequences for validation')
 parser.add_argument('--seed', type=int, default=0, help='random seed')
 
 parser.add_argument('--img_w', type=int, default=512, help='image width')
@@ -31,7 +31,7 @@ parser.add_argument("--head_size_divisor", default=12, type=int)
 parser.add_argument("--dropout", default=0.1, type=float)
 
 parser.add_argument('--rwkv_out_size', type=int, default=1024, help='size of the LSTM latent')
-parser.add_argument('--rnn_dropout_out', type=float, default=0.2, help='dropout for the LSTM output layer')
+parser.add_argument('--rwkv_dropout_out', type=float, default=0.01, help='dropout for the rwkv output layer')
 parser.add_argument('--rnn_dropout_between', type=float, default=0.2, help='dropout within LSTM')
 parser.add_argument('--n_layer', type=int, default=4, help='num of rwkv')
 parser.add_argument('--n_embd', type=int, default=768, help='v_f + i_f')

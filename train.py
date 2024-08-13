@@ -36,21 +36,23 @@ parser.add_argument('--imu_dropout', type=float, default=0, help='dropout for th
 parser.add_argument('--head_size_a', type=int, default=64, help='')
 
 parser.add_argument('--rwkv_out_size', type=int, default=1024)
+parser.add_argument('--rwkv_dropout_out', type=int, default=0.01)
+
 parser.add_argument('--weight_decay', type=float, default=5e-6, help='weight decay for the optimizer')
 parser.add_argument('--batch_size', type=int, default=16, help='batch size')
-parser.add_argument('--seq_len', type=int, default=16, help='sequence length for LSTM')
+parser.add_argument('--seq_len', type=int, default=20, help='sequence length for LSTM')
 parser.add_argument('--workers', type=int, default=32, help='number of workers')
-parser.add_argument('--epochs_warmup', type=int, default=30, help='number of epochs for warmup')
+parser.add_argument('--epochs_warmup', type=int, default=40, help='number of epochs for warmup')
 parser.add_argument('--epochs_fine', type=int, default=30, help='number of epochs for finetuning')
-parser.add_argument('--lr_warmup', type=float, default=6e-4, help='learning rate for warming up stage')
-parser.add_argument('--lr_fine', type=float, default=1e-5, help='learning rate for finetuning stage')
+parser.add_argument('--lr_warmup', type=float, default=5e-4, help='learning rate for warming up stage')
+parser.add_argument('--lr_fine', type=float, default=1e-6, help='learning rate for finetuning stage')
 
-parser.add_argument('--n_layer', type=int, default=4, help='num of rwkv')
+parser.add_argument('--n_layer', type=int, default=8, help='num of rwkv')
 parser.add_argument('--n_embd', type=int, default=768, help='v_f + i_f')
 parser.add_argument('--dim_att', type=int, default=768, help='')
-parser.add_argument('--dim_ffn', type=int, default=2048, help='')
+parser.add_argument('--dim_ffn', type=int, default=3072, help='')
 parser.add_argument("--head_size_divisor", default=12, type=int)
-parser.add_argument("--dropout", default=0.01, type=float, help="dropout for the rwkv")
+parser.add_argument("--dropout", default=0.02, type=float, help="dropout for the rwkv")
 parser.add_argument("--grad_cp", default=0, type=int)
 
 parser.add_argument('--experiment_name', type=str, default='experiment', help='experiment name')
@@ -69,6 +71,13 @@ args = parser.parse_args()
 # 设置随机种子
 torch.manual_seed(args.seed)
 np.random.seed(args.seed)
+
+def update_status(ep, args):
+    if ep < args.epochs_warmup:  # Warmup stage
+        lr = args.lr_warmup
+    elif ep >= args.epochs_warmup and ep < args.epochs_warmup + args.epochs_fine: # fine training stage
+        lr = args.lr_fine
+    return lr
 
 def train(model, optimizer, train_loader, logger, ep, weighted=False):
     mse_losses = []
@@ -199,20 +208,14 @@ def main():
 
     # 模型加载到 GPU
     model.cuda(gpu_ids[0])
-
+    best = 10000
     # 初始化优化器
     optimizer = optim.Adam(model.parameters(), lr=1e-4, betas=(0.9, 0.999), eps=1e-08, weight_decay=args.weight_decay)
-    best = float('inf')
     all_iters = []
     pose_losses = []
     total_epochs = args.epochs_warmup + args.epochs_fine
     for ep in range(total_epochs):
-
-        # 动态调整学习率
-        if ep < args.epochs_warmup:
-            lr = args.lr_warmup
-        else:
-            lr = args.lr_fine
+        lr = update_status(ep, args)
         optimizer.param_groups[0]['lr'] = lr
 
         message = f'Epoch: {ep}, lr: {lr:.8f}'

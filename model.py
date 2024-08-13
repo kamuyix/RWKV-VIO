@@ -125,11 +125,9 @@ class Pose_RWKV(nn.Module):
     def __init__(self, opt):
         super(Pose_RWKV, self).__init__()
 
-        f_len = opt.v_f_len + opt.i_f_len
         self.rwkv = RWKV(opt)
 
         self.fuse = Fusion_module(opt)
-
         self.regressor = nn.Sequential(
             nn.Linear(opt.rwkv_out_size, 128).to(torch.bfloat16),
             nn.LeakyReLU(0.1, inplace=True).to(torch.bfloat16),
@@ -140,6 +138,7 @@ class Pose_RWKV(nn.Module):
         fused = self.fuse(fv, fi)
         # fused shape [bs, seq-1, i_f_len + v_f_len]
         out = self.rwkv(fused)
+        # out = self.rwkv_drop_out(out)
         pose = self.regressor(out)
         return pose
 
@@ -168,14 +167,9 @@ class DeepVIO(nn.Module):
         imu = imu.to(torch.bfloat16)
         fv, fi = self.Feature_net(img, imu)
         # fv shape [bs, seq-1, 512], fi shape [bs, seq-1, 256]
-        seq_len = fv.shape[1]
-
-        poses = []
-
         # for i in range(seq_len):
         #     pose = self.Pose_net(fv[:, i:i+1, :].to(torch.bfloat16), fi[:, i:i+1, :].to(torch.bfloat16))
         #     poses.append(pose)
         poses = self.Pose_net(fv.to(torch.bfloat16), fi.to(torch.bfloat16))
-        # poses = torch.cat(poses, dim=1)
         # poses shape [16, seq-1, 6]
         return poses
