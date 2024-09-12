@@ -146,6 +146,7 @@ class Pose_RWKV(nn.Module):
         pose = self.regressor(out)
         return pose
 
+
 class DeepVIO(nn.Module):
     def __init__(self, opt):
         super(DeepVIO, self).__init__()
@@ -154,26 +155,39 @@ class DeepVIO(nn.Module):
         self.Pose_net = Pose_RWKV(opt)
         self.opt = opt
 
-        self._initialize_weights()
-
-    def _initialize_weights(self):
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d) or isinstance(m, nn.Conv1d) or isinstance(m, nn.Linear):
-                kaiming_normal_(m.weight.data)
-                if m.bias is not None:
-                    m.bias.data.zero_()
-            elif isinstance(m, nn.BatchNorm2d) or isinstance(m, nn.BatchNorm1d):
-                m.weight.data.fill_(1)
-                m.bias.data.zero_()
+        initialization(self)
 
     def forward(self, img, imu):
         img = img.to(torch.bfloat16)
         imu = imu.to(torch.bfloat16)
+
         fv, fi = self.Feature_net(img, imu)
-        # fv shape [bs, seq-1, 512], fi shape [bs, seq-1, 256]
-        # for i in range(seq_len):
-        #     pose = self.Pose_net(fv[:, i:i+1, :].to(torch.bfloat16), fi[:, i:i+1, :].to(torch.bfloat16))
-        #     poses.append(pose)
-        poses = self.Pose_net(fv.to(torch.bfloat16), fi.to(torch.bfloat16))
-        # poses shape [16, seq-1, 6]
+        poses = self.Pose_net(fv, fi)
         return poses
+
+
+
+def initialization(net):
+    # Initilization
+    for m in net.modules():
+        if isinstance(m, nn.Conv2d) or isinstance(m, nn.Conv1d) or isinstance(m, nn.ConvTranspose2d) or isinstance(
+                m, nn.Linear):
+            kaiming_normal_(m.weight.data)
+            if m.bias is not None:
+                m.bias.data.zero_()
+        elif isinstance(m, nn.LSTM):
+            for name, param in m.named_parameters():
+                if 'weight_ih' in name:
+                    torch.nn.init.kaiming_normal_(param.data)
+                elif 'weight_hh' in name:
+                    torch.nn.init.kaiming_normal_(param.data)
+                elif 'bias_ih' in name:
+                    param.data.fill_(0)
+                elif 'bias_hh' in name:
+                    param.data.fill_(0)
+                    n = param.size(0)
+                    start, end = n // 4, n // 2
+                    param.data[start:end].fill_(1.)
+        elif isinstance(m, nn.BatchNorm2d) or isinstance(m, nn.BatchNorm1d):
+            m.weight.data.fill_(1)
+            m.bias.data.zero_()
