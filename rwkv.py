@@ -115,22 +115,29 @@ class RWKV_Tmix_x060(nn.Module):
 
         self.time_shift = nn.ZeroPad2d((0, 0, 1, -1))
         self.receptance = nn.Linear(args.n_embd, args.dim_att, bias=False)
+        nn.init.orthogonal_(self.receptance.weight, gain=1)
         self.receptance.weight.data = self.receptance.weight.data.to('cuda', dtype=torch.bfloat16)
 
         self.key = nn.Linear(args.n_embd, args.dim_att, bias=False)
+        nn.init.orthogonal_(self.key.weight, gain=0.1)
         self.key.weight.data = self.key.weight.data.to('cuda', dtype=torch.bfloat16)
 
         self.value = nn.Linear(args.n_embd, args.dim_att, bias=False)
+        nn.init.orthogonal_(self.value.weight, gain=1)
         self.value.weight.data = self.value.weight.data.to('cuda', dtype=torch.bfloat16)
 
         self.output = nn.Linear(args.dim_att, args.n_embd, bias=False)
+        nn.init.zeros_(self.output.weight)
         self.output.weight.data = self.output.weight.data.to('cuda', dtype=torch.bfloat16)
 
         self.gate = nn.Linear(args.n_embd, args.dim_att, bias=False)
+        nn.init.orthogonal_(self.gate.weight, gain=0.1)
         self.gate.weight.data = self.gate.weight.data.to('cuda', dtype=torch.bfloat16)
-
+        scale = ((1 + layer_id) / args.n_layer) ** 0.7
         self.ln_x = nn.GroupNorm(self.n_head, args.dim_att, eps=(1e-5) * (args.head_size_divisor ** 2))
+        self.ln_x.weight.data.fill_(scale)
         self.ln_x.weight.data = self.ln_x.weight.data.to('cuda', dtype=torch.bfloat16)
+        self.ln_x.bias.data.zero_()
         self.ln_x.bias.data = self.ln_x.bias.data.to('cuda', dtype=torch.bfloat16)
 
     @MyFunction
@@ -194,12 +201,15 @@ class RWKV_CMix_x060(nn.Module):
             self.time_maa_r = nn.Parameter(1.0 - torch.pow(ddd, ratio_1_to_almost0)).to(torch.bfloat16)
 
         self.key = nn.Linear(args.n_embd, args.dim_ffn, bias=False)
+        nn.init.orthogonal_(self.key.weight, gain=1)
         self.key.weight.data = self.key.weight.data.to('cuda', dtype=torch.bfloat16)
 
         self.receptance = nn.Linear(args.n_embd, args.n_embd, bias=False)
+        nn.init.zeros_(self.receptance.weight)
         self.receptance.weight.data = self.receptance.weight.data.to('cuda', dtype=torch.bfloat16)
 
         self.value = nn.Linear(args.dim_ffn, args.n_embd, bias=False)
+        nn.init.zeros_(self.value.weight)
         self.value.weight.data = self.value.weight.data.to('cuda', dtype=torch.bfloat16)
 
     def forward(self, x):
@@ -276,7 +286,7 @@ class RWKV(pl.LightningModule):
 
         if args.dropout > 0:
             self.drop0 = nn.Dropout(p=args.dropout)
-
+        self.init_params()
     def configure_optimizers(self):
         trainable_params = [p for p in self.parameters() if p.requires_grad]
         optim_groups = [{"params": trainable_params, "weight_decay": self.args.weight_decay}]
@@ -322,3 +332,66 @@ class RWKV(pl.LightningModule):
             all = self.all_gather(batch_parts)
             if self.trainer.is_global_zero:
                 self.trainer.my_loss_all = all
+
+    def init_params(self):
+        m = self.state_dict()
+        n_params = 0
+
+        for n in self.state_dict():
+            p = m[n]
+            shape = p.shape
+
+            s0 = str(shape[0]) if len(shape) > 0 else ""
+            s1 = str(shape[1]) if len(shape) > 1 else ""
+            s2 = str(shape[2]) if len(shape) > 2 else ""
+            print(f"{s0.ljust(5)} {s1.ljust(5)} {s2.ljust(5)} {n}", end="")
+
+            scale = 1.0
+            if "ln_" in n or ".ln" in n or "time_" in n or n.endswith('_w') or n.endswith('_w1') or n.endswith(
+                    '_w2') or n.endswith('_bias'):
+                if 'ln_x.weight' in n:
+                    layer_scale = (1 + int(n.split('.')[1])) / self.args.n_layer
+                    m[n] = (p * 0.0) + (layer_scale ** 0.7)
+                else:
+                    m[n] = p
+                print()
+            elif n == "emb.weight":
+                m[n] = p
+                scale = -1e-4
+                nn.init.uniform_(m[n], a=scale,
+                                 b=-scale)  # !!! If you are using positional embedding, maybe it's better to remove block.0.ln0, and use default initialization for emb.weight instead of my uniform_(a=-1e-4, b=1e-4) !!!
+                print(f" [scale {scale}]")
+            elif n == "head.weight":
+                m[n] = p
+
+                scale = 0.5
+                m[n] = m[n].to(torch.float32)
+                nn.init.orthogonal_(m[n], gain=scale)
+                m[n] = m[n].to(torch.bfloat16)
+
+                print(f" [scale {scale}]")
+            else:
+                assert n.endswith('.weight')  # should always be true
+
+                for kk in [".att.output.", ".ffn.value.", ".ffn.receptance."]:
+                    if kk in n:
+                        scale = 0
+                for kk in [".att.key."]:
+                    if kk in n:
+                        scale = 0.1
+                for kk in [".att.gate."]:
+                    if kk in n:
+                        scale = 0.1
+
+                print(f" [scale {scale}]")
+
+                m[n] = torch.empty((shape[0], shape[1]), device=p.device)
+                if scale == 0:
+                    nn.init.zeros_(m[n])
+                else:
+                    nn.init.orthogonal_(m[n], gain=scale)
+
+            n_params += m[n].numel()
+
+        print('model params', n_params)
+        torch.cuda.empty_cache()
