@@ -1,15 +1,15 @@
-import torch
+mport torch
 import torch.nn as nn
 import torch.nn.functional as F
-
+from fecam import dct_channel_block,dct
 class RWKVConfig:
-    def __init__(self, block_size, n_layer, n_head, n_embd, dropout=0.0, bias=True):
+    def __init__(self, block_size, n_layer, n_head, n_embd, dropout=0.02):
         self.block_size = block_size
         self.n_layer = n_layer
         self.n_head = n_head
         self.n_embd = n_embd
         self.dropout = dropout
-        self.bias = bias
+        self.bias = False
 
 class LayerNorm(nn.Module):
     def __init__(self, ndim, bias=True):
@@ -18,7 +18,7 @@ class LayerNorm(nn.Module):
         self.bias = nn.Parameter(torch.zeros(ndim)) if bias else None
 
     def forward(self, input):
-        return F.layer_norm(input, self.weight.shape, self.weight, self.bias, 1e-5)
+        return F.layer_norm(input, self.weight.shape, self.weight, self.bias, 1e-4)
 
 class RWKV_TimeMix_x051a(nn.Module):
     def __init__(self, config, layer_id):
@@ -29,36 +29,49 @@ class RWKV_TimeMix_x051a(nn.Module):
         self.n_head = config.n_head
 
         with torch.no_grad():
-            ratio_0_to_1 = layer_id / (config.n_layer - 1)
+            # ratio_0_to_1 = layer_id / (config.n_layer - 1)
+            ratio_0_to_1 = layer_id / (config.n_layer)
             ratio_1_to_almost0 = 1.0 - (layer_id / config.n_layer)
             ddd = torch.ones(1, 1, config.n_embd)
             for i in range(config.n_embd):
                 ddd[0, 0, i] = i / config.n_embd
 
-            self.time_maa_k = nn.Parameter(1.0 - torch.pow(ddd, ratio_1_to_almost0))
-            self.time_maa_v = nn.Parameter(1.0 - (torch.pow(ddd, ratio_1_to_almost0) + 0.3 * ratio_0_to_1))
-            self.time_maa_r = nn.Parameter(1.0 - torch.pow(ddd, 0.5 * ratio_1_to_almost0))
-            self.time_maa_g = nn.Parameter(1.0 - torch.pow(ddd, 0.5 * ratio_1_to_almost0))
+            self.time_maa_k = nn.Parameter(torch.pow(ddd, ratio_1_to_almost0))
+            self.time_maa_v = nn.Parameter((torch.pow(ddd, ratio_1_to_almost0) + 0.3 * ratio_0_to_1))
+            self.time_maa_r = nn.Parameter(torch.pow(ddd, 0.5 * ratio_1_to_almost0))
+            self.time_maa_g = nn.Parameter(torch.pow(ddd, 0.5 * ratio_1_to_almost0))
 
             decay_speed = torch.ones(self.n_head)
             for h in range(self.n_head):
-                decay_speed[h] = -6 + 5 * (h / (self.n_head - 1)) ** (0.7 + 1.3 * ratio_0_to_1)
+                decay_speed[h] = -6 + 5 * (h / (self.n_head - 1)) ** (0.7 + 0.3 * ratio_0_to_1)
             self.time_decay = nn.Parameter(decay_speed.unsqueeze(-1))
 
             tmp = torch.zeros(self.n_head)
             for h in range(self.n_head):
-                tmp[h] = ratio_0_to_1 * (1 - (h / (self.n_head - 1)))
+                zigzag = ((h + 1) % 3 - 1) * 0.1
+                tmp[h] = ratio_0_to_1 * (1 - (h / (self.n_head - 1))) + zigzag
             self.time_faaaa = nn.Parameter(tmp.unsqueeze(-1))
 
         self.time_shift = nn.ZeroPad2d((0, 0, 1, -1))
 
         self.receptance = nn.Linear(config.n_embd, config.n_embd, bias=config.bias)
+        nn.init.orthogonal_(self.receptance.weight, gain=1)
+
         self.key = nn.Linear(config.n_embd, config.n_embd, bias=config.bias)
+        nn.init.orthogonal_(self.key.weight, gain=0.1)
+
         self.value = nn.Linear(config.n_embd, config.n_embd, bias=config.bias)
+        nn.init.orthogonal_(self.value.weight, gain=1)
+
         self.gate = nn.Linear(config.n_embd, config.n_embd, bias=config.bias)
+        nn.init.orthogonal_(self.gate.weight, gain=0.1)
 
         self.output = nn.Linear(config.n_embd, config.n_embd, bias=config.bias)
-        self.ln_x = nn.GroupNorm(self.n_head, config.n_embd, eps=(1e-5)*64)
+        nn.init.zeros_(self.output.weight)
+        scale = ((1 + layer_id) / config.n_layer) ** 0.7
+        self.ln_x = nn.GroupNorm(self.n_head, config.n_embd, eps=(1e-5)*144)
+        # self.ln_x.weight.data.fill_(scale)
+        # self.ln_x.bias.data.zero_()
 
         self.dropout = nn.Dropout(config.dropout)
 
@@ -72,7 +85,7 @@ class RWKV_TimeMix_x051a(nn.Module):
             Q = 128
         else:
             Q = T
-
+        assert T % Q == 0
         xx = self.time_shift(x) - x
         xk = x + xx * self.time_maa_k
         xv = x + xx * self.time_maa_v
@@ -126,12 +139,16 @@ class RWKV_ChannelMix_x051a(nn.Module):
             ddd = torch.ones(1, 1, config.n_embd)
             for i in range(config.n_embd):
                 ddd[0, 0, i] = i / config.n_embd
-            self.time_maa_k = nn.Parameter(1.0 - torch.pow(ddd, ratio_1_to_almost0))
-            self.time_maa_r = nn.Parameter(1.0 - torch.pow(ddd, 0.5 * ratio_1_to_almost0))
+            self.time_maa_k = nn.Parameter(torch.pow(ddd, ratio_1_to_almost0))
+            self.time_maa_r = nn.Parameter(torch.pow(ddd, ratio_1_to_almost0))
 
-        self.key = nn.Linear(config.n_embd, 3 * config.n_embd, bias=config.bias)
-        self.value = nn.Linear(3 * config.n_embd, config.n_embd, bias=config.bias)
+        self.key = nn.Linear(config.n_embd, 2 * config.n_embd, bias=config.bias)
+        nn.init.orthogonal_(self.key.weight, gain=0.1)
+        self.value = nn.Linear(2 * config.n_embd, config.n_embd, bias=config.bias)
+        nn.init.orthogonal_(self.value.weight, gain=1)
         self.receptance = nn.Linear(config.n_embd, config.n_embd, bias=config.bias)
+        nn.init.orthogonal_(self.receptance.weight, gain=1)
+        nn.init.orthogonal_(self.receptance.weight, gain=1)
         self.dropout = nn.Dropout(config.dropout)
 
     def forward(self, x):
@@ -156,6 +173,7 @@ class Block(nn.Module):
 
     def forward(self, x):
         x = x + self.tmix(self.ln_1(x))
+
         x = x + self.cmix(self.ln_2(x))
         return x
 
@@ -163,12 +181,12 @@ class RWKV(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.blocks = nn.ModuleList([Block(config, i) for i in range(config.n_layer)])
-        self.ln_out = LayerNorm(config.n_embd, bias=config.bias)
+        self.ln_out = LayerNorm(config.n_embd)
         self.head = nn.Linear(config.n_embd, config.n_embd, bias=config.bias)
 
     def forward(self, x):
         for block in self.blocks:
             x = block(x)
         x = self.ln_out(x)
-        x = self.head(x)
+        # x = self.head(x)
         return x
