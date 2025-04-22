@@ -97,8 +97,7 @@ class RWKV_TimeMix_x051a(nn.Module):
 
         self.output = nn.Linear(config.n_embd, config.n_embd, bias=config.bias)
         nn.init.zeros_(self.output.weight)
-        scale = ((1 + layer_id) / config.n_layer) ** 0.7
-        self.ln_x = nn.GroupNorm(self.n_head, config.n_embd, eps=(1e-5)*144)
+        self.ln_x = nn.GroupNorm(self.n_head, config.n_embd, eps=(1e-5)*96)
         # self.ln_x.weight.data.fill_(scale)
         # self.ln_x.bias.data.zero_()
 
@@ -119,6 +118,9 @@ class RWKV_TimeMix_x051a(nn.Module):
             Q = T
         assert T % Q == 0
         xx = self.time_shift(x) - x
+        print(f"xx. neirong" f" {xx}")
+        print(f"x neirong." f" {x}")
+
         xk = x + xx * self.time_maa_k
         xv = x + xx * self.time_maa_v
         xr = x + xx * self.time_maa_r
@@ -194,9 +196,9 @@ class RWKV_ChannelMix_x051a(nn.Module):
         self.key = nn.Linear(config.n_embd, 2 * config.n_embd, bias=config.bias)
         nn.init.orthogonal_(self.key.weight, gain=0.1)
         self.value = nn.Linear(2 * config.n_embd, config.n_embd, bias=config.bias)
-        nn.init.orthogonal_(self.value.weight, gain=1)
+        nn.init.orthogonal_(self.value.weight, gain=0.1)
         self.receptance = nn.Linear(config.n_embd, config.n_embd, bias=config.bias)
-        nn.init.orthogonal_(self.receptance.weight, gain=1)
+        nn.init.orthogonal_(self.receptance.weight, gain=0.1)
         self.dropout = nn.Dropout(config.dropout)
 
     def forward(self, x):
